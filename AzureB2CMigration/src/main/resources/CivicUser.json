@@ -1,0 +1,19 @@
+[ 
+      { 
+         "email":"billyzates666@accela.com",
+         "role":"CITIZEN",
+         "loginName":"Bill Gates666",
+         "id":0,
+         "receiveSMS":"N",
+         "active":"No"
+      },
+      { 
+         "email":"chewbacca666@accela.com",
+         "role":"CITIZEN",
+         "loginName":"chewbaccayy666",
+         "registerDate":"2014-01-14 12:10:59",
+         "id":132,
+         "receiveSMS":"N",
+         "active":"No"
+      }
+]
