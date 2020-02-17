@@ -53,19 +53,10 @@ public class AzureB2CmigrationService {
 	}
 
 	private void migrateUser(B2CUser b2cUser, String b2cBearerToken) {
-		String json= "{ \"accountEnabled\": true, "
-						+ "\"displayName\": \""+b2cUser.getLoginName()+"\", "
-						+ "\"mailNickname\": \"testNickname7\", "
-						+ "\"userPrincipalName\": \""+StringUtils.substringBefore(b2cUser.getEmail(), "@")+"@dublindevb2c.onmicrosoft.com\", "
-						+ "\"passwordProfile\" : { "
-							+ "\"forceChangePasswordNextSignIn\": true, "
-							+ "\"password\": \"Password123!\""
-						+ " } "
-					+ "}";
+		String json = mapUserToB2CStandardUser(b2cUser);
 		LOGGER.info("json : {}", json);
 		try {
 			StringEntity postingString = new StringEntity(json);
-			LOGGER.info("json : {}", json);
 			CloseableHttpClient client = HttpClients.createDefault();
 			HttpPost postMethod = new HttpPost(GRAPH_URL);
 			postMethod.setHeader("Content-Type", "application/json");
@@ -87,12 +78,23 @@ public class AzureB2CmigrationService {
 		}
 	}
 
+	private String mapUserToB2CStandardUser(B2CUser b2cUser) {
+		return "{ \"accountEnabled\": true, "
+				+ "\"displayName\": \""+b2cUser.getLoginName()+"\", "
+				+ "\"mailNickname\": \"testNickname7\", "
+				+ "\"userPrincipalName\": \""+StringUtils.substringBefore(b2cUser.getEmail(), "@")+"@dublindevb2c.onmicrosoft.com\", "
+				+ "\"passwordProfile\" : { "
+					+ "\"forceChangePasswordNextSignIn\": true, "
+					+ "\"password\": \"Password123!\""
+				+ " } "
+			+ "}";
+	}
+
 	private List<B2CUser> mapUserFromJsonFile(String path) {
 		ObjectMapper mapper = new ObjectMapper();
 		List<B2CUser> b2cUsers = new ArrayList<>();
-		String usersAsJsonString = "";
 		try {
-			usersAsJsonString = new String(Files.readAllBytes(Paths.get(path)), 
+			String usersAsJsonString = new String(Files.readAllBytes(Paths.get(path)), 
 				StandardCharsets.UTF_8);
 			b2cUsers = Arrays.asList(mapper.readValue(usersAsJsonString, B2CUser[].class));
 		} catch (IOException e) {
@@ -104,8 +106,6 @@ public class AzureB2CmigrationService {
 
 	private static String getB2CBearerToken(Properties b2cApplicationProp, String clientSecret) {
 		String b2cBearerToken = "";
-
-
 		try {
 			List<BasicNameValuePair> postParameters = new ArrayList<>();
 			postParameters.add(new BasicNameValuePair("client_id", b2cApplicationProp.getProperty("client_id")));
