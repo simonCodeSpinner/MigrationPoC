@@ -1,0 +1,19 @@
+{
+  "displayName": "USER_NAME",
+  "identities": [
+    {
+      "signInType": "userName",
+      "issuer": "TENANT_NAME.onmicrosoft.com",
+      "issuerAssignedId": "USER_ID"
+    },
+    {
+      "signInType": "emailAddress",
+      "issuer": "TENANT_NAME.onmicrosoft.com",
+      "issuerAssignedId": "USER_EMAIL"
+    }
+  ],
+  "passwordProfile" : {
+    "password": "Test123!",
+    "forceChangePasswordNextSignIn": true
+  }
+}
