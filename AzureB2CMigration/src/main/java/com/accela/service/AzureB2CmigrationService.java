@@ -1,7 +1,9 @@
 package com.accela.service;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.nio.charset.StandardCharsets;
@@ -10,9 +12,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Properties;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -22,39 +22,52 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Service;
 
 import com.accela.model.B2CUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+@PropertySource("classpath:b2cApplication.properties")
 @Service
 public class AzureB2CmigrationService {
-	
-	private static final Logger LOGGER = LoggerFactory
-		.getLogger(AzureB2CmigrationService.class);
+
+	@Value("${tenant_name}")
+	private String tenantName;
+
+	@Value("${client_id}")
+	private String clientId;
+
+	@Value("${scope}")
+	private String scope;
+
+	@Value("${grant_type}")
+	private String grantType;
+
+	@Value("${b2c_tenant_url}")
+	private String b2cTenantUrl;
 
 	private static final String GRAPH_URL = "https://graph.microsoft.com/v1.0/users";
 
-	public void migrateUserFromFile(String pathToUserFile, String pathToB2CApplicationProp, String clientSecret) {
-		LOGGER.info("AT migrateUserFromFile ");
-		try {
-			String b2cBearerToken = getB2CBearerToken(getB2CApplicationProp(pathToB2CApplicationProp), clientSecret);
-			List<B2CUser> b2cUsers = mapUserFromJsonFile(pathToUserFile);
-			for(B2CUser b2cUser: b2cUsers) {
-				migrateUser(b2cUser, b2cBearerToken);
-			}
-		} catch (IOException e) {
-			e.printStackTrace();
-			LOGGER.info(e.getMessage());
+	private static final Logger LOGGER = LoggerFactory
+		.getLogger(AzureB2CmigrationService.class);
+
+	public void migrateUserFromFile(String pathToUserFile, String clientSecret) {
+		String b2cBearerToken = getB2CBearerToken(clientSecret);
+
+		List<B2CUser> b2cUsers = mapUserFromJsonFile(pathToUserFile);
+		for(B2CUser b2cUser: b2cUsers) {
+			migrateUser(b2cUser, b2cBearerToken);
 		}
 	}
 
 	private void migrateUser(B2CUser b2cUser, String b2cBearerToken) {
-		String json = mapUserToB2CStandardUser(b2cUser);
-		LOGGER.info("json : {}", json);
+		String json = mapUserToB2CSocialUser(b2cUser);
 		try {
 			StringEntity postingString = new StringEntity(json);
 			CloseableHttpClient client = HttpClients.createDefault();
@@ -78,16 +91,49 @@ public class AzureB2CmigrationService {
 		}
 	}
 
-	private String mapUserToB2CStandardUser(B2CUser b2cUser) {
-		return "{ \"accountEnabled\": true, "
-				+ "\"displayName\": \""+b2cUser.getLoginName()+"\", "
-				+ "\"mailNickname\": \"testNickname7\", "
-				+ "\"userPrincipalName\": \""+StringUtils.substringBefore(b2cUser.getEmail(), "@")+"@dublindevb2c.onmicrosoft.com\", "
-				+ "\"passwordProfile\" : { "
-					+ "\"forceChangePasswordNextSignIn\": true, "
-					+ "\"password\": \"Password123!\""
-				+ " } "
-			+ "}";
+	private String mapUserToB2CSocialUser(B2CUser b2cUser) {
+		JSONObject jsonUserTemplate = readJsonFromFile("social-user-template.json");
+		String tenantIssuer = tenantName+".onmicrosoft.com";
+
+		jsonUserTemplate.put("displayName", b2cUser.getLoginName());
+
+		JSONArray jsonArray = jsonUserTemplate.getJSONArray("identities");
+		for(int i=0; i< jsonArray.length(); i++) {
+			JSONObject jsonChild = jsonArray.getJSONObject(i);
+			if(jsonChild.get("signInType").equals("emailAddress")) {
+				jsonChild.put("issuerAssignedId", b2cUser.getEmail());
+			}
+			if(jsonChild.get("signInType").equals("userName")) {
+				jsonChild.put("issuerAssignedId", b2cUser.getLoginName());
+			}
+			jsonChild.put("issuer", tenantIssuer);
+		}
+		return jsonUserTemplate.toString();
+	}
+
+	private JSONObject readJsonFromFile(String path) {
+		InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(path);
+		String jsonin = "";
+		StringBuilder resultStringBuilder = new StringBuilder();
+		try (BufferedReader br = new BufferedReader(new InputStreamReader(in))) {
+			String line;
+			while ((line = br.readLine()) != null) {
+				resultStringBuilder.append(line).append("\n");
+				jsonin = resultStringBuilder.toString();
+			}
+		} catch (IOException e1) {
+			e1.printStackTrace();
+		}
+		finally {
+			if (in != null) {
+				try {
+					in.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		return new JSONObject(jsonin);
 	}
 
 	private List<B2CUser> mapUserFromJsonFile(String path) {
@@ -104,16 +150,17 @@ public class AzureB2CmigrationService {
 		return b2cUsers;
 	}
 
-	private static String getB2CBearerToken(Properties b2cApplicationProp, String clientSecret) {
+	private String getB2CBearerToken(String clientSecret) {
 		String b2cBearerToken = "";
+
 		try {
 			List<BasicNameValuePair> postParameters = new ArrayList<>();
-			postParameters.add(new BasicNameValuePair("client_id", b2cApplicationProp.getProperty("client_id")));
-			postParameters.add(new BasicNameValuePair("scope", b2cApplicationProp.getProperty("scope")));
-			postParameters.add(new BasicNameValuePair("grant_type", b2cApplicationProp.getProperty("grant_type")));
+			postParameters.add(new BasicNameValuePair("client_id", clientId));
+			postParameters.add(new BasicNameValuePair("scope", scope));
+			postParameters.add(new BasicNameValuePair("grant_type", grantType));
 			postParameters.add(new BasicNameValuePair("client_secret", clientSecret));
 
-			HttpPost postMethod = new HttpPost(b2cApplicationProp.getProperty("b2c_tenant_url"));
+			HttpPost postMethod = new HttpPost(b2cTenantUrl);
 			postMethod.setHeader("Content-Type", "application/x-www-form-urlencoded");
 			postMethod.setEntity(new UrlEncodedFormEntity(postParameters, "UTF-8"));
 
@@ -139,15 +186,5 @@ public class AzureB2CmigrationService {
 			e.printStackTrace();
 		}
 		return b2cBearerToken;
-	}
-
-	private Properties getB2CApplicationProp(String pathToB2CApplicationProp) throws IOException {
-		InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(pathToB2CApplicationProp);
-		Properties props = new Properties();
-		if (in == null) {
-			throw new IOException("Stream null from "+pathToB2CApplicationProp);
-		}
-		props.load(in);
-		return props;
 	}
 }

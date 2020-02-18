@@ -26,13 +26,12 @@ public class AzureB2CMigrationApplication implements CommandLineRunner {
 
 	@Override
 	public void run(String... args) {
-		if(args.length != 3) {
+		if(args.length != 2) {
 			LOGGER.error("Please supply the following command line argruments; "
 					+ "\n[1]the path to your user migration file, "
-					+ "\n[2]the path to the file containting your b2c applicaion properties and, "
-					+ "\n[3]the client secrete for your tenat application");
+					+ "\n[2]the client secrete for your tenat application");
 			return;
 		}
-		azureB2CmigrationService.migrateUserFromFile(args[0], args[1], args[2]);
+		azureB2CmigrationService.migrateUserFromFile(args[0], args[1]);
 	}
 }
